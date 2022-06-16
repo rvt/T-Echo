@@ -60,25 +60,33 @@ void loop()
         blinkMillis = millis();
         switch (rgb) {
         case 0:
+            // green
             digitalWrite(GreenLed_Pin, LOW);
             digitalWrite(RedLed_Pin, HIGH);
             digitalWrite(BlueLed_Pin, HIGH);
             break;
         case 1:
+            // red
             digitalWrite(GreenLed_Pin, HIGH);
             digitalWrite(RedLed_Pin, LOW);
             digitalWrite(BlueLed_Pin, HIGH);
             break;
         case 2:
+            // blue
             digitalWrite(GreenLed_Pin, HIGH);
             digitalWrite(RedLed_Pin, HIGH);
+            digitalWrite(BlueLed_Pin, LOW);
+            break;
+        case 3:
+            // white
+            digitalWrite(GreenLed_Pin, LOW);
+            digitalWrite(RedLed_Pin, LOW);
             digitalWrite(BlueLed_Pin, LOW);
             break;
         default :
             break;
         }
-        rgb++;
-        rgb %= 3;
+        rgb %= 4;
     }
 
     loopGPS();
@@ -112,6 +120,42 @@ void setupDisplay()
     display->setFont(&FreeMonoBold12pt7b);
 }
 
+bool tryBaudrate(uint32_t baudRate) {
+    TinyGPSPlus gps{};
+    uint32_t MAX_TIME_PER_BAUDRATE = 2000;
+    uint32_t CHECKSUMS_TO_PASS = 4;
+    SerialGPS.end();
+    delay(250);
+    SerialGPS.begin(baudRate);
+    SerialGPS.flush();
+    delay(250);
+    uint32_t start = millis();
+
+    while(gps.passedChecksum() < CHECKSUMS_TO_PASS && (millis() - start) < MAX_TIME_PER_BAUDRATE) {
+        while (SerialGPS.available() > 0) {
+            gps.encode(SerialGPS.read());
+        }
+    }
+
+    return millis() - start < MAX_TIME_PER_BAUDRATE;
+}
+
+bool findGPSBaudRate() {
+    uint32_t baudRates[] = {110, 300, 600, 1200, 2400, 14400, 19200, 38400, 57600, 115200, 128000, 256000, 4800, 9600, 0};
+    uint8_t start = 0;
+    SerialGPS.begin(9600); // Always begin to prevent weird delay when calling end
+    SerialMon.println("[GPS] Finding baudrate ");
+    do {
+        SerialMon.print("Trying : ");
+        SerialMon.println(baudRates[start]);
+    } while (tryBaudrate(baudRates[start]) == false && baudRates[++start]!=0);
+
+    SerialMon.print("Found at : ");
+    SerialMon.println(baudRates[start]);
+
+    return baudRates[start];
+}
+
 
 bool setupGPS()
 {
@@ -120,6 +164,17 @@ bool setupGPS()
 #ifndef PCA10056
     SerialGPS.setPins(Gps_Rx_Pin, Gps_Tx_Pin);
 #endif
+    uint16_t baudRate = findGPSBaudRate();
+
+    SerialGPS.begin(baudRate);
+    SerialGPS.flush();
+    delay(250);
+    SerialMon.print("Resetting GPS baudrate to : 9600");
+    SerialGPS.write("$PCAS01,1*1D\r\n");
+    SerialGPS.write("$PCAS00*01\r\n");
+    SerialGPS.flush();
+    SerialGPS.end();
+    delay(250);
     SerialGPS.begin(9600);
     SerialGPS.flush();
 
@@ -145,6 +200,7 @@ void loopGPS()
 
     if (millis() - last > 5000) {
         if (gps->location.isUpdated()) {
+           rgb++;
             SerialMon.print(F("LOCATION   Fix Age="));
             SerialMon.print(gps->location.age());
             SerialMon.print(F("ms Raw Lat="));
@@ -244,8 +300,10 @@ void loopGPS()
             SerialMon.println(gps->hdop.value());
         }
 
-        if (gps->charsProcessed() < 10)
+        if (gps->charsProcessed() < 10) {
+            rgb=1;
             Serial.println(F("WARNING: No GPS data.  Check wiring."));
+        }
         last = millis();
         Serial.println();
     }
@@ -273,7 +331,6 @@ void configVDD(void)
 }
 void boardInit()
 {
-    uint8_t rlst = 0;
 
 #ifdef HIGH_VOLTAGE
     configVDD();

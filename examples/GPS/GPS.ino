@@ -141,7 +141,7 @@ bool tryBaudrate(uint32_t baudRate) {
 }
 
 bool findGPSBaudRate() {
-    uint32_t baudRates[] = {110, 300, 600, 1200, 2400, 14400, 19200, 38400, 57600, 115200, 128000, 256000, 4800, 9600, 0};
+    uint32_t baudRates[] = {9600, 4800, 19200, 38400, 1200, 2400, 14400, 57600, 115200, 128000, 256000, 0};
     uint8_t start = 0;
     SerialGPS.begin(9600); // Always begin to prevent weird delay when calling end
     SerialMon.println("[GPS] Finding baudrate ");

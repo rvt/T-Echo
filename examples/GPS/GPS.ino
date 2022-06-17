@@ -120,38 +120,42 @@ void setupDisplay()
     display->setFont(&FreeMonoBold12pt7b);
 }
 
-bool tryBaudrate(uint32_t baudRate) {
-    TinyGPSPlus gps{};
-    uint32_t MAX_TIME_PER_BAUDRATE = 2000;
-    uint32_t CHECKSUMS_TO_PASS = 4;
+void setGPSBaudrate(uint32_t baudRate) {
     SerialGPS.end();
     delay(250);
     SerialGPS.begin(baudRate);
     SerialGPS.flush();
     delay(250);
-    uint32_t start = millis();
+}
 
-    while(gps.passedChecksum() < CHECKSUMS_TO_PASS && (millis() - start) < MAX_TIME_PER_BAUDRATE) {
+bool testGPSCommunication() {
+    TinyGPSPlus gps;
+    uint32_t MAX_TIME_TO_TRY = 4000;
+    uint32_t CHECKSUMS_TO_PASS = 4;
+
+    uint32_t start = millis();
+    while(gps.passedChecksum() < CHECKSUMS_TO_PASS && (millis() - start) < MAX_TIME_TO_TRY) {
         while (SerialGPS.available() > 0) {
             gps.encode(SerialGPS.read());
         }
     }
 
-    return millis() - start < MAX_TIME_PER_BAUDRATE;
+    return millis() - start < MAX_TIME_TO_TRY;
 }
 
-bool findGPSBaudRate() {
+uint32_t findGPSBaudRate() {
     uint32_t baudRates[] = {9600, 4800, 19200, 38400, 1200, 2400, 14400, 57600, 115200, 128000, 256000, 0};
     uint8_t start = 0;
-    SerialGPS.begin(9600); // Always begin to prevent weird delay when calling end
+    SerialGPS.begin(9600); // Always begin(..) to prevent delay when calling end()
     SerialMon.println("[GPS] Finding baudrate ");
     do {
-        SerialMon.print("Trying : ");
+        SerialMon.print("Trying : ");        
         SerialMon.println(baudRates[start]);
-    } while (tryBaudrate(baudRates[start]) == false && baudRates[++start]!=0);
+        setGPSBaudrate(baudRates[start]);
+    } while (testGPSCommunication() == false && baudRates[++start] != 0);
 
     SerialMon.print("Found at : ");
-    SerialMon.println(baudRates[start]);
+    SerialMon.print(baudRates[start]);
 
     return baudRates[start];
 }
@@ -165,18 +169,19 @@ bool setupGPS()
     SerialGPS.setPins(Gps_Rx_Pin, Gps_Tx_Pin);
 #endif
     uint16_t baudRate = findGPSBaudRate();
-
-    SerialGPS.begin(baudRate);
-    SerialGPS.flush();
-    delay(250);
-    SerialMon.print("Resetting GPS baudrate to : 9600");
-    SerialGPS.write("$PCAS01,1*1D\r\n");
-    SerialGPS.write("$PCAS00*01\r\n");
-    SerialGPS.flush();
-    SerialGPS.end();
-    delay(250);
-    SerialGPS.begin(9600);
-    SerialGPS.flush();
+    if (baudRate == 0) {
+      SerialMon.println("[GPS] Buadrate not found, trying default anyways");  
+        setGPSBaudrate(9600);
+    } else if (baudRate != 9600) {
+        setGPSBaudrate(baudRate);
+        SerialMon.println("Resetting GPS baudrate from ");
+        SerialMon.print(baudRate);
+        SerialMon.println(" back to 9600");
+        SerialGPS.write("$PCAS01,1*1D\r\n");
+        SerialGPS.write("$PCAS00*01\r\n");
+        setGPSBaudrate(9600);
+        SerialMon.println("Done");
+    }
 
     pinMode(Gps_pps_Pin, INPUT);
 
